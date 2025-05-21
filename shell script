@@ -1,0 +1,32 @@
+#!/bin/bash
+
+TOWER_URL="https://your-tower-instance/api/v2"
+TEMPLATE_ID=42
+USERNAME="your_user"
+PASSWORD="your_pass"
+
+# Start job
+RESPONSE=$(curl -s -u "$USERNAME:$PASSWORD" -X POST "$TOWER_URL/job_templates/$TEMPLATE_ID/launch/")
+JOB_ID=$(echo "$RESPONSE" | jq -r '.id')
+echo "Launched Ansible Job with ID: $JOB_ID"
+
+# Poll job status
+while true; do
+    JOB_STATUS=$(curl -s -u "$USERNAME:$PASSWORD" "$TOWER_URL/jobs/$JOB_ID/" | jq -r '.status')
+    echo "Current job status: $JOB_STATUS"
+    if [[ "$JOB_STATUS" == "successful" || "$JOB_STATUS" == "failed" || "$JOB_STATUS" == "error" || "$JOB_STATUS" == "canceled" ]]; then
+        break
+    fi
+    sleep 5
+done
+
+# Fetch and show events
+EVENTS=$(curl -s -u "$USERNAME:$PASSWORD" "$TOWER_URL/jobs/$JOB_ID/job_events/?page_size=1000")
+echo "$EVENTS" > ansible_job_events.json
+
+echo "Task results:"
+jq -r '
+.results[]
+| select(.event == "runner_on_ok" or .event == "runner_on_failed" or .event == "runner_on_unreachable")
+| "\(.event): \(.task) on \(.host_name) - \(.stdout)"
+' ansible_job_events.json
